@@ -19,6 +19,11 @@ public class PlayerData
 
     //crouch
     public bool crouch = false;
+    
+    // Movement and visibility
+    public bool isMoving = false;
+    public bool isVisible = true;
+    public long lastPositionUpdate = 0;
 
     public bool destroy = false;
     public bool die = false;
@@ -27,6 +32,8 @@ public class PlayerData
     // stats
     public float kills = 0;
     public float deaths = 0;
+    public float health = 100.0f; // Player health (100 = full health)
+    public float maxHealth = 100.0f; // Maximum health
 
     // Current weapon ID
     public bool weaponChanged = false;

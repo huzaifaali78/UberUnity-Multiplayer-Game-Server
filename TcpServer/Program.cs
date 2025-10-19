@@ -118,6 +118,9 @@ class TcpServer
                 handshakeRequest.Put(playerData.boots);
                 handshakeRequest.Put(playerData.kills);
                 handshakeRequest.Put(playerData.deaths);
+                handshakeRequest.Put(playerData.health);
+                handshakeRequest.Put(playerData.maxHealth);
+                handshakeRequest.Put(playerData.isAlive ? 1 : 0); // Convert bool to int
             }
         }
 
@@ -150,7 +153,12 @@ class TcpServer
         if (buffer.GetInt() == SERIAL_Y && buffer.GetInt() == SERIAL_X)
         {
             string playerName = buffer.GetString();
-            PlayerData newPlayer = new PlayerData(playerName) { id = id };
+            PlayerData newPlayer = new PlayerData(playerName) { 
+                id = id,
+                health = 100.0f,
+                maxHealth = 100.0f,
+                isAlive = true
+            };
 
             lock (playerDatas)
             {
@@ -230,7 +238,55 @@ class TcpServer
                 float posX = buffer.GetFloat();
                 float posY = buffer.GetFloat();
                 float posZ = buffer.GetFloat();
-                Console.WriteLine($"Player \"{id}\" dealt \"{damageAmount}\" damage to Player \"{receiverId}\" (critical code \"{damageCriticalCode}\") at (\"{posX}\", \"{posY}\", \"{posZ}\")");
+                
+                // Apply damage to the receiving player
+                if (playerDatas.TryGetValue(receiverId, out var receiverPlayer))
+                {
+                    // Subtract damage from health
+                    receiverPlayer.health -= damageAmount;
+                    
+                    // Ensure health doesn't go below 0
+                    if (receiverPlayer.health < 0)
+                        receiverPlayer.health = 0;
+                    
+                    Console.WriteLine($"Player \"{id}\" dealt \"{damageAmount}\" damage to Player \"{receiverId}\" (critical code \"{damageCriticalCode}\") at (\"{posX}\", \"{posY}\", \"{posZ}\"). Player \"{receiverId}\" health: \"{receiverPlayer.health}\"");
+                    
+                    // Broadcast health update to all clients
+                    ByteBuffer healthUpdateBuffer = new ByteBuffer();
+                    healthUpdateBuffer.Put((byte)2); // protocol
+                    healthUpdateBuffer.Put((byte)8); // health update
+                    healthUpdateBuffer.Put(receiverId);
+                    healthUpdateBuffer.Put(receiverPlayer.health);
+                    healthUpdateBuffer.Put(receiverPlayer.maxHealth);
+                    
+                    SendToAllClients(healthUpdateBuffer.Trim().Get());
+                    
+                    // Check if player died
+                    if (receiverPlayer.health <= 0)
+                    {
+                        receiverPlayer.die = true;
+                        receiverPlayer.isAlive = false;
+                        receiverPlayer.deaths++;
+                        
+                        // Increment killer's kills
+                        if (playerDatas.TryGetValue(id, out var killerPlayer))
+                        {
+                            killerPlayer.kills++;
+                        }
+                        
+                        Console.WriteLine($"Player \"{receiverId}\" died! Killed by Player \"{id}\"");
+                        
+                        // Broadcast death to all clients
+                        ByteBuffer deathBuffer = new ByteBuffer();
+                        deathBuffer.Put((byte)2); // protocol
+                        deathBuffer.Put((byte)9); // death notification
+                        deathBuffer.Put(receiverId);
+                        deathBuffer.Put(id);
+                        deathBuffer.Put(damageCriticalCode);
+                        
+                        SendToAllClients(deathBuffer.Trim().Get());
+                    }
+                }
                 break;
 
             case 3: // Player died
